@@ -9,12 +9,15 @@ MIT license, all text above must be included in any redistribution
 */
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include <FastLED.h>
 #include <FS.h>
 #include <SD.h>
 #include <SPI.h>
 #include <Game.h>
+#include <MapItems/Hero.h>
 #include <Screens/MovementScreen.h>
 #include <AccelStepper.h>
+#include <GameBoardActuator.h>
 
 /*
  * Chip used in board is FT5436
@@ -25,12 +28,10 @@ MIT license, all text above must be included in any redistribution
 #include "FT6236.h"
 #define V2_1
 
-#define dirPin 2
-#define stepPin 26
 #define STEPS_PER_REV 200  // Full steps per revolution
 #define MICROSTEPS 1      // Microstepping setting on DRV8825
 
-AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
+GameBoardActuator gameBoardActuator = GameBoardActuator(18, 19, 2, 26, 34, 35);
 
 // TFT SPI
 #define TFT_LED 33		// TFT backlight pin
@@ -45,6 +46,11 @@ AccelStepper stepper(AccelStepper::DRIVER, stepPin, dirPin);
 
 #define SD_CS_PIN 4
 #define POWER_OFF_PIN 17
+
+
+#define NUM_LEDS 256
+#define DATA_PIN 6
+CRGB leds[NUM_LEDS];
 
 FT6236 ts = FT6236(480, 320);	// Create object for Touch library
 TFT_eSPI tft = TFT_eSPI();  	// Invoke custom library with default width and height
@@ -67,58 +73,6 @@ uint8_t isTouched(uint16_t time)
 		currentMillis = millis();
 	}
 	return 0;
-}
-
-void refreshColorMatrix() {
-	ColorMatrix *cm = game.getMap()->getColorMatrix();
-
-	for(int x = 0; x < MAP_W; x++) {
-		for(int y = 0; y < MAP_H; y++) {
-			uint32_t color = (*cm)[y][x];
-			tft.fillRect(x*10, y*10, 10, 10, color);
-		}
-	}
-}
-
-// Print initial screen
-void touchScreen()
-{
-	tft.fillScreen(TFT_BLACK);
-	tft.setTextSize(1);
-	tft.setTextFont(4);
-	// Print SD test button
-	tft.setTextColor(TFT_WHITE, TFT_BROWN);
-	tft.fillRoundRect(0, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BROWN);
-	tft.setTextDatum(MC_DATUM);
-	tft.drawString("SD test", (RECT_SIZE_X / 2), TFT_RES_Y - (RECT_SIZE_Y / 2));
-	// Print I2C scanner button
-	tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
-	tft.fillRoundRect(RECT_SIZE_X + 27, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_DARKGREEN);
-	tft.setTextDatum(BC_DATUM);
-	tft.drawString("I2C", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_RES_Y - (RECT_SIZE_Y / 2));
-	tft.setTextDatum(TC_DATUM);
-	tft.drawString("scanner", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_RES_Y - (RECT_SIZE_Y / 2));
-	// Print Power off button
-	tft.setTextColor(TFT_WHITE, TFT_RED);
-	tft.fillRoundRect(2 * RECT_SIZE_X + 54, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
-	tft.setTextDatum(BC_DATUM);
-	tft.drawString("Power", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_RES_Y - (RECT_SIZE_Y / 2));
-	tft.setTextDatum(TC_DATUM);
-	tft.drawString("off", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_RES_Y - (RECT_SIZE_Y / 2));
-	// Print Screen test button
-	tft.setTextColor(TFT_WHITE, TFT_BLUE);
-	tft.fillRoundRect(TFT_RES_X - RECT_SIZE_X, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BLUE);
-	tft.setTextDatum(BC_DATUM);
-	tft.drawString("Screen", TFT_RES_X - (RECT_SIZE_X / 2), TFT_RES_Y - (RECT_SIZE_Y / 2));
-	tft.setTextDatum(TC_DATUM);
-	tft.drawString("test", TFT_RES_X - (RECT_SIZE_X / 2), TFT_RES_Y - (RECT_SIZE_Y / 2));
-
-	tft.setTextSize(1);
-	tft.setTextFont(2);
-	tft.setTextColor(TFT_WHITE, TFT_BLACK);
-	tft.setTextDatum(TL_DATUM);
-	tft.drawString("X: ", 3, 0);
-	tft.drawString("Y: ", 3, 16);
 }
 
 #ifndef PIO_UNIT_TESTING
@@ -144,26 +98,40 @@ void setup(){
 
 	game.start(3, 3);
 	screen = new MovementScreen(&tft, &game);
-	// touchScreen();
-	// refreshColorMatrix();
 
-	stepper.setMaxSpeed(100);
-	stepper.setAcceleration(30);
-	stepper.moveTo(52);
+	gameBoardActuator.setup();
+
+	FastLED.addLeds<NEOPIXEL, 23>(leds, NUM_LEDS);
 }
+
+int current_led = 0;
 
 void loop()
 {
 	Screen *new_screen = nullptr;
-	stepper.run();
+	gameBoardActuator.run();
+
+	current_led++;
+	if (current_led == NUM_LEDS) {
+		current_led = 0;
+	}
+	if (current_led == 0) {
+		leds[NUM_LEDS - 1] = CRGB::Black;
+	}
+	else {
+		leds[current_led - 1] = CRGB::Black;
+	}
+	leds[current_led] = CHSV(random8(),255,255);;
+	FastLED.show();
+	// // delay(50);
+
 
 	if (ts.touched()) {
 		TS_Point p = ts.getPoint();
 		if (!isTouching) {
 			new_screen = screen->touch(p.x, p.y);
-			// If at the end of travel go to the other end
-			if (stepper.distanceToGo() == 0)
-			stepper.moveTo(-stepper.currentPosition());
+			gameBoardActuator.rotateToTeam(game.getCurrentHero()->getTeam());
+			gameBoardActuator.tilt(game.getMap()->isMapVisibleToBothTeams());
 		}
 		isTouching = true;
 	}
